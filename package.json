@@ -1,0 +1,27 @@
+{
+  "name": "promiseLib",
+  "author": "finnigantime",
+  "description": "toy promise library",
+  "homepage": "http://cdn.meme.am/instances/500x/59165288.jpg",
+  "version": "0.1.1",
+  "main": "promiseLib.js",
+  "keywords": [
+  ],
+  "contributors": [
+    {
+      "name": "finnigantime",
+      "email": ""
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/finnigantime/promiseLib"
+  },
+  "engines": {
+    "node": ">= 0.8.x"
+  },
+  "devDependencies": {
+  },
+  "dependencies": {
+  }
+}
