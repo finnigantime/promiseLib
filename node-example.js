@@ -1,10 +1,15 @@
 var request = require("request");
-var Promise = require("bluebird");
+//var Promise = require("bluebird");
+
+var Promise = require("./promiseLib");
+var fooResolver;
 
 var loadJquery = function () {
     var resolver = Promise.pending();
+    fooResolver = resolver;
 
     require("jsdom").env("", function (err, window) {
+        console.log("got jsdom... err=" + err);
         if (err) {
             console.error(err);
             resolver.reject(err);
@@ -52,6 +57,8 @@ var loadMLBTeamURLs = function ($) {
             return header.find("a").first().attr("href");
         });
         console.log("teamUrls.length: " + teamUrls.length);
+        fooResolver.promise._dumpPromiseGraph();
+
         return teamUrls;
     });
 };
@@ -81,11 +88,16 @@ var loadMLBTeamData = function ($, uri) {
     });
 };
 
+
 var ctx = {};
+console.log("Loading jquery...");
 loadJquery().then(function (jquery) {
+    console.log("jquery loaded...");
     ctx.$ = jquery;
     return loadMLBTeamURLs(ctx.$);
 }).then(function (teamUrls) {
+    console.log("teamUrls: " + teamUrls);
+    console.log("Object.keys(teamUrls): " + Object.keys(teamUrls));
     var teamDataPromises = teamUrls.map(function (index, teamUri) {
         return loadMLBTeamData(ctx.$, teamUri);
     });
