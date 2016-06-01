@@ -3,18 +3,34 @@ exports = module.exports = (function () {
 
     var __global_id__ = 0;
 
-    function Promise(resolveHandler, rejectHandler, initArgs) {
+    function Promise(resolveHandler, rejectHandler) {
+
+        var initArgs = {};
+        console.log("args length: " + arguments.length);
+        for (var i = 2; i < arguments.length; ++i) {
+            var args = arguments[i];
+            Object.keys(args).forEach(function (key) {
+                initArgs[key] = args[key]
+            });
+        }
+
         this._linkedPromises = [];
+        this._children = [];
         this._label = initArgs.label;
+        this._isSettled = false;
         this._settledValue = undefined;
         this._resolveHandler = resolveHandler;
-        this._parent = undefined;
-        this.__id = __global_id__;
+        this._parent = initArgs.parent;
+        if (this._parent !== undefined) {
+            this._parent._children.push(this);
+        }
+        this.__id = "p" + __global_id__;
         this._isLinked = initArgs.isLinked === true;
         __global_id__++;
 
         this._trace("created")
         this._trace("_resolveHandler: " + this._resolveHandler);
+        this._dumpPromiseGraph();
     }
 
     Promise.prototype._assert = function (condition, message) {
@@ -25,7 +41,9 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype.toString = function () {
-        return "[" + this.__id + (this._label ? " (" + this._label + ")" : "") + "]";
+        var parent = " parent=" + (this._parent ? this._parent.__id : undefined);
+        var settled = " _isSettled=" + this._isSettled
+        return "[" + this.__id + (this._label ? " (" + this._label + ")" : "") + parent + settled + "]";
     };
 
     Promise.prototype._trace = function (message) {
@@ -42,16 +60,24 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype._dumpPromiseGraph = function () {
-        console.log("promise graph for promise " + this.__id);
+        console.log("promise graph for promise " + this.__id + ":");
 
         var rootPromise = this._getRootPromise();
         rootPromise._dump("");
+        console.log();
     };
 
-    Promise.prototype._dump = function (indent) {
-        console.log(indent + this + " - _settledValue: " + (typeof this._settledValue));
-        this._linkedPromises.forEach(function (linkedPromise) {
-            linkedPromise._dump(indent + "  ");
+    Promise.prototype._dump = function (indent, isLinked) {
+        var that = this;
+        var line = indent + this;
+        if (isLinked === true) {
+            line = line + " (LINKED)";
+        }
+        line = line + " - _isSettled: " + this._isSettled + ", _settledValue: " + (typeof this._settledValue);
+        console.log(line);
+        this._children.forEach(function (child) {
+            var isLinked = that._linkedPromises.indexOf(child) >= 0;
+            child._dump(indent + "  ", isLinked);
         });
     };
 
@@ -67,12 +93,11 @@ exports = module.exports = (function () {
     //
     // TODO - handle case where we already have a _settledValue
     Promise.prototype.then = function (resolveHandler) {
-        var linkedPromise = new Promise(resolveHandler, undefined, { isLinked: true, label: "linked" });
-        linkedPromise._parent = this;
+        var linkedPromise = new Promise(resolveHandler, undefined, { isLinked: true, label: "linked", parent: this });
         this._trace("added linked promise - " + linkedPromise.__id);
         this._linkedPromises.push(linkedPromise);
 
-        if (this._settledValue !== undefined) {
+        if (this._isSettled === true) {
             this._trace("already resolved, so will resolve linked promise with _settledValue");
             linkedPromise._resolveLinkedPromise(this._settledValue);
         }
@@ -88,6 +113,7 @@ exports = module.exports = (function () {
         this._trace("resolving with value of type: " + (typeof value));
 
         this._settledValue = value;
+        this._isSettled = true;
 
         // TODO - make sure _resolveHandler is not defined
 
@@ -121,17 +147,22 @@ exports = module.exports = (function () {
         }
 
         // TODO - should probably handle this the other way where resolveValue is wrapped as a promise if it is not one already
-        if (resolveValue instanceof Promise === false) {
-            resolveValue = Promise.fulfilled(resolveValue);
-            resolveValue._parent = this;
+        this._trace("_resolveHandler completed with value of type: " + (typeof resolveValue));
+        if (resolveValue instanceof Promise === true) {
+            this._trace("resolveValue is promise (" + resolveValue.__id + "), will wait for it to resolve before resolving this promise");
+
+            resolveValue.then(function (value) {
+                that._trace("resolveValue promise returned with value of type: " + value);
+
+                that._resolve(value);
+            });
+        } else {
+            this._resolve(resolveValue);
         }
-        resolveValue.then(function (value) {
-            this._resolve(value);
-        });
     };
 
-    Promise.fulfilled = function (value) {
-        var newPromise = new Promise(undefined, undefined, { label: ".fulfilled" });
+    Promise.fulfilled = function (value, initArgs) {
+        var newPromise = new Promise(undefined, undefined, initArgs, { label: ".fulfilled" });
         newPromise._resolve(value);
         return newPromise;
     };
@@ -159,19 +190,25 @@ exports = module.exports = (function () {
         var allResolver = new PromiseResolver();
         allResolver.promise._label = "ALL";
 
-        promisesToBundle.forEach(function (promise, index) {
-            promise.then(function (value) {
-                allResolver.promise._trace("allResolver - resolved Promise i=" + index + " with value=" + value);
-                resolvedValuesCount += 1;
-                resolvedValues[index] = value;
+        // TODO - what if promisesToBundle gets modified while processing it?
+        for (var i = 0; i < promisesToBundle.length; ++i) {
+            var promise = promisesToBundle[i];
+            var createHandler = function (index) {
+                return function (value) {
+                    allResolver.promise._trace("allResolver - resolved Promise i=" + index + " with value=" + value);
+                    resolvedValuesCount += 1;
+                    resolvedValues[index] = value;
 
-                // TODO - what if promisesToBundle gets modified while processing it?
-                if (resolvedValuesCount === promisesToBundle.length) {
-                    allResolver.promise._trace("all promises resolved!");
-                    allResolver.resolve(resolvedValues);
+                    if (resolvedValuesCount === promisesToBundle.length) {
+                        allResolver.promise._trace("all promises resolved!");
+                        allResolver.resolve(resolvedValues);
+                    }
                 }
-            });
-        });
+            };
+            promise.then(createHandler(i));
+        }
+
+        return allResolver.promise;
     };
 
     return {
