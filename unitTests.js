@@ -3,6 +3,10 @@ var Promise = require("./promiseLib");
 
 mocha.setup("bdd");
 
+var unexpectedSpy = function () {
+    chai.fail("unexpected function call");
+};
+
 describe("basic functionality", function () {
     it("can create a promise", function (done) {
         var out = Promise.pending();
@@ -10,9 +14,28 @@ describe("basic functionality", function () {
         done();
     });
 
+    it("fulfilled promise calls fulfill handler", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(done, unexpectedSpy);
+        resolver.resolve();
+    });
+
+    it("rejected promise calls reject handler", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(unexpectedSpy, done);
+        resolver.reject();
+    });
+
     it("chained promise gets called on fulfilled promise", function (done) {
         Promise.fulfilled("fulfillValue").then(function (value) {
             chai.expect(value).to.equal("fulfillValue");
+            done();
+        }, unexpectedSpy);
+    });
+
+    it("chained promise gets called on rejected promise", function (done) {
+        Promise.rejected("rejectValue").then(unexpectedSpy, function (value) {
+            chai.expect(value).to.equal("rejectValue");
             done();
         });
     });
@@ -55,3 +78,13 @@ describe("basic functionality", function () {
         });
     });
 });
+
+describe("Promise.all", function () {
+    it(".all chains promise results to resolve", function (done) {
+        Promise.all([ Promise.fulfilled(), Promise.fulfilled(), Promise.fulfilled() ]).then(function (result) {
+            chai.expect(result).to.deep.equal([ undefined, undefined, undefined ]);
+            done();
+        });
+    });
+});
+

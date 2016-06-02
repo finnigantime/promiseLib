@@ -17,9 +17,14 @@ exports = module.exports = (function () {
         this._linkedPromises = [];
         this._children = [];
         this._label = initArgs.label;
+
         this._isSettled = false;
+        this._isFulfilled = false;
+        this._isRejected = false;
         this._settledValue = undefined;
+
         this._resolveHandler = resolveHandler;
+        this._rejectHandler = rejectHandler;
         this._parent = initArgs.parent;
         if (this._parent !== undefined) {
             this._parent._children.push(this);
@@ -42,7 +47,7 @@ exports = module.exports = (function () {
 
     Promise.prototype.toString = function () {
         var parent = " parent=" + (this._parent ? this._parent.__id : undefined);
-        var settled = " _isSettled=" + this._isSettled
+        var settled = " _isSettled=" + this._isSettled;
         return "[" + this.__id + (this._label ? " (" + this._label + ")" : "") + parent + settled + "]";
     };
 
@@ -92,14 +97,20 @@ exports = module.exports = (function () {
     //   - p.c calls c(return value of b(v.a)) and resolves with its return value
     //
     // TODO - handle case where we already have a _settledValue
-    Promise.prototype.then = function (resolveHandler) {
-        var linkedPromise = new Promise(resolveHandler, undefined, { isLinked: true, label: "linked", parent: this });
+    Promise.prototype.then = function (resolveHandler, rejectHandler) {
+        var linkedPromise = new Promise(resolveHandler, rejectHandler, { isLinked: true, label: "linked", parent: this });
         this._trace("added linked promise - " + linkedPromise.__id);
         this._linkedPromises.push(linkedPromise);
 
         if (this._isSettled === true) {
-            this._trace("already resolved, so will resolve linked promise with _settledValue");
-            linkedPromise._resolveLinkedPromise(this._settledValue);
+            if (this._isFulfilled === true) {
+                this._trace("already fulfilled, so will resolve linked promise with _settledValue");
+                linkedPromise._resolveLinkedPromise(this._settledValue);
+            } else {
+                this._assert(this._isRejected === true, "expected _isRejected to be true");
+                this._trace("already rejected, so will reject linked promise with _settledValue");
+                linkedPromise._rejectLinkedPromise(this._settledValue);
+            }
         }
 
         return linkedPromise;
@@ -108,12 +119,13 @@ exports = module.exports = (function () {
     Promise.prototype._resolve = function (value) {
         var that = this;
 
-        this._assert(this._settledValue === undefined, "should not _resolve promise that already has a _settledValue");
+        this._assert(this._isSettled === false, "should not _resolve promise that is already settled");
 
         this._trace("resolving with value of type: " + (typeof value));
 
         this._settledValue = value;
         this._isSettled = true;
+        this._isFulfilled = true;
 
         // TODO - make sure _resolveHandler is not defined
 
@@ -121,6 +133,26 @@ exports = module.exports = (function () {
         this._linkedPromises.forEach(function (promise) {
             that._trace("resolving linked promise - " + promise.__id);
             promise._resolveLinkedPromise(value);
+        });
+    };
+
+    Promise.prototype._reject = function (value) {
+        var that = this;
+
+        this._assert(this._isSettled === false, "should not _resolve promise that is already settled");
+
+        this._trace("rejecting with value: " + value);
+
+        this._settledValue = value;
+        this._isSettled = true;
+        this._isRejected = true;
+
+        // TODO - make sure _rejectHandler is not defined
+
+        this._trace("will reject linked promises. length=" + this._linkedPromises.length);
+        this._linkedPromises.forEach(function (promise) {
+            that._trace("rejecting linked promise - " + promise.__id);
+            promise._rejectLinkedPromise(value);
         });
     };
 
@@ -138,7 +170,7 @@ exports = module.exports = (function () {
     Promise.prototype._resolveLinkedPromise = function (value) {
         var that = this;
 
-        this._assert(this._isLinked === true, "_resolveLinkedPromise should only be called for linked promises");
+        this._assert(this._isLinked === true, "should only be called for linked promises");
         var resolveValue = value;
         if (this._resolveHandler !== undefined) {
             this._trace("calling _resolveHandler with value of type " + (typeof value));
@@ -161,6 +193,33 @@ exports = module.exports = (function () {
         }
     };
 
+    Promise.prototype._rejectLinkedPromise = function (value) {
+        var that = this;
+
+        this._assert(this._isLinked === true, "should only be called for linked promises");
+
+        var rejectValue = value;
+        if (this._rejectHandler !== undefined) {
+            this._trace("calling _rejectHandler with value of type " + (typeof value));
+            this._trace("_rejectHandler: " + this._rejectHandler);
+            rejectValue = this._rejectHandler(value);
+        }
+
+        // TODO - should probably handle this the other way where rejectValue is wrapped as a promise if it is not one already
+        this._trace("_rejectHandler completed with value of type: " + (typeof rejectValue));
+        if (rejectValue instanceof Promise === true) {
+            this._trace("rejectValue is promise (" + rejectValue.__id + "), will wait for it to resolve before resolving this promise");
+
+            rejectValue.then(function (value) {
+                that._trace("rejectValue promise returned with value of type: " + value);
+
+                that._reject(value);
+            });
+        } else {
+            this._reject(rejectValue);
+        }
+    };
+
     function PromiseResolver() {
         this.promise = new Promise(undefined, undefined, { label: "resolver" });
     }
@@ -171,6 +230,12 @@ exports = module.exports = (function () {
         this.promise._resolve(value);
     };
 
+    PromiseResolver.prototype.reject = function (reason) {
+        console.log("rejecting resolver...");
+        // TODO - can only resolve once
+        this.promise._reject(reason);
+    };
+
     var createResolver = function () {
         return new PromiseResolver();
     };
@@ -179,6 +244,13 @@ exports = module.exports = (function () {
         var newPromise = new Promise(undefined, undefined, { label: ".fulfilled" });
         // TODO - weird to not do this as an init arg
         newPromise._resolve(value);
+        return newPromise;
+    };
+
+    var createRejected = function (value) {
+        var newPromise = new Promise(undefined, undefined, { label: ".rejected" });
+        // TODO - weird to not do this as an init arg
+        newPromise._reject(value);
         return newPromise;
     };
 
@@ -215,6 +287,7 @@ exports = module.exports = (function () {
     return {
         pending: createResolver,
         fulfilled: createFulfilled,
+        rejected: createRejected,
         all: bundlePromises
     };
 })();
