@@ -57,7 +57,6 @@ var loadMLBTeamURLs = function ($) {
             return header.find("a").first().attr("href");
         });
         console.log("teamUrls.length: " + teamUrls.length);
-        fooResolver.promise._dumpPromiseGraph();
 
         return teamUrls;
     });
@@ -122,3 +121,12 @@ loadJquery().then(function (jquery) {
     console.log("\nall done!\n");
 });
 
+Promise.fulfilled().then(function () {
+    return Promise.fulfilled();
+}).then(function () {
+    console.log("test 1 passed");
+});
+
+Promise.fulfilled().then(function () {}).then(function () {
+    console.log("test 2 passed");
+});

@@ -8,3 +8,4 @@ resolver.promise.then(function (val) {
 });
 resolver.resolve("output");
 
+require("./unitTests");
