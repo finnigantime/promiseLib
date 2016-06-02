@@ -16,14 +16,20 @@ describe("basic functionality", function () {
 
     it("fulfilled promise calls fulfill handler", function (done) {
         var resolver = Promise.pending();
-        resolver.promise.then(done, unexpectedSpy);
+        resolver.promise.then(done, unexpectedSpy, unexpectedSpy);
         resolver.resolve();
     });
 
     it("rejected promise calls reject handler", function (done) {
         var resolver = Promise.pending();
-        resolver.promise.then(unexpectedSpy, done);
+        resolver.promise.then(unexpectedSpy, done, unexpectedSpy);
         resolver.reject();
+    });
+
+    it("cancelled promise calls cancel handler", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+        resolver.cancel();
     });
 
     it("chained promise gets called on fulfilled promise", function (done) {
