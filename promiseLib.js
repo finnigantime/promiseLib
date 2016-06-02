@@ -161,12 +161,6 @@ exports = module.exports = (function () {
         }
     };
 
-    Promise.fulfilled = function (value, initArgs) {
-        var newPromise = new Promise(undefined, undefined, initArgs, { label: ".fulfilled" });
-        newPromise._resolve(value);
-        return newPromise;
-    };
-
     function PromiseResolver() {
         this.promise = new Promise(undefined, undefined, { label: "resolver" });
     }
@@ -179,6 +173,13 @@ exports = module.exports = (function () {
 
     var createResolver = function () {
         return new PromiseResolver();
+    };
+
+    var createFulfilled = function (value) {
+        var newPromise = new Promise(undefined, undefined, { label: ".fulfilled" });
+        // TODO - weird to not do this as an init arg
+        newPromise._resolve(value);
+        return newPromise;
     };
 
     var bundlePromises = function (promisesToBundle) {
@@ -213,6 +214,7 @@ exports = module.exports = (function () {
 
     return {
         pending: createResolver,
+        fulfilled: createFulfilled,
         all: bundlePromises
     };
 })();
