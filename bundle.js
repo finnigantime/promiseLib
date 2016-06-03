@@ -5093,10 +5093,15 @@ exports = module.exports = (function () {
 
     var __global_id__ = 0;
 
+    // Constructor for Promise, the core class in this library.
+    //  - resolveHandler: callback to run when the Promise fulfills. Its return value gets set to the Promise's settled value.
+    //  - rejectHandler: callback to run when the Promise rejects. Its return value gets set to the Promise's settled value.
+    //  - cancelHandler: callback to run when the Promise cancels.
+    //  - varargs initArgs: optional array of objects that specify property value mappings to set on the new Promise.
     function Promise(resolveHandler, rejectHandler, cancelHandler /*, varargs initArgs */) {
-
+        // process varargs of the initArgs. Each one is an object that represents a mapping of property names to
+        // property values that should be set on the new Promise instance.
         var initArgs = {};
-        ///this._trace("args length: " + arguments.length);
         for (var i = 3; i < arguments.length; ++i) {
             var args = arguments[i];
             Object.keys(args).forEach(function (key) {
@@ -5104,24 +5109,29 @@ exports = module.exports = (function () {
             });
         }
 
+        // linked promises state
         this._linkedPromises = [];
         this._linkedPromisesCancelledCount = 0;
         this._children = [];
-        this._label = initArgs.label;
+        this._parent = initArgs.parent;
+        if (this._parent !== undefined) {
+            this._parent._children.push(this);
+        }
 
+        // resolution state
         this._isSettled = false;
         this._isFulfilled = false;
         this._isRejected = false;
         this._isCancelled = false;
         this._settledValue = undefined;
 
+        // handler state
         this._resolveHandler = resolveHandler;
         this._rejectHandler = rejectHandler;
         this._cancelHandler = cancelHandler;
-        this._parent = initArgs.parent;
-        if (this._parent !== undefined) {
-            this._parent._children.push(this);
-        }
+
+        // metadata for tracing
+        this._label = initArgs.label;
         this.__id = "p" + __global_id__;
         this._isLinked = initArgs.isLinked === true;
         __global_id__++;
@@ -5131,21 +5141,33 @@ exports = module.exports = (function () {
         this._dumpPromiseGraph();
     }
 
+    // enable debug-level tracing
+    // Promise management is async, so tracing is usually the best way to debug Promises (similar to debugging distributed systems).
     Promise.prototype.enableTracing = true;
     function setEnableTracing(newVal) {
         Promise.prototype.enableTracing = newVal;
     }
 
-    Promise.prototype.useBluebirdSemantics = false;
+    // enable API parity with Bluebird 2.X
+    // This changes some of the library behavior (e.g. cancellation is async and is treated as rejection in Bluebird 2.X).
+    // Setting this flag allows the promiseLib to be integrated into codebases that are currently using Bluebird 2.X.
+    Promise.prototype.useBluebirdV2Semantics = false;
     function setUseBluebirdV2Semantics(newVal) {
-        Promise.prototype.useBluebirdSemantics = newVal;
+        Promise.prototype.useBluebirdV2Semantics = newVal;
     }
 
+    // set external dispatcher
+    // This is a required setup step. The external dispatcher is any object that has a method setTimeout defined:
+    //   function setTimeout(callback, delayMS);
+    //
+    // Having a configurable externalDispatcher allows the promiseLib to be used both from nodejs on the command line
+    // and within a browser. Passing an instance of "window" suffices.
     Promise.prototype.externalDispatcher = undefined;
     function setExternalDispatcher(newVal) {
         Promise.prototype.externalDispatcher = newVal;
     }
 
+    // Assertion helper that dumps the promise graph and prints the given message if the condition is not met.
     Promise.prototype._assert = function (condition, message) {
         if (condition !== true) {
             this._dumpPromiseGraph();
@@ -5153,12 +5175,14 @@ exports = module.exports = (function () {
         }
     };
 
+    // pretty-print a Promise instance using its debug metadata
     Promise.prototype.toString = function () {
         var parent = " parent=" + (this._parent ? this._parent.__id : undefined);
         var settled = " _isSettled=" + this._isSettled;
         return "[" + this.__id + (this._label ? " (" + this._label + ")" : "") + parent + settled + "]";
     };
 
+    // tracing helper
     Promise.prototype._trace = function (message) {
         if (Promise.prototype.enableTracing === true) {
             var prefix = this + ": ";
@@ -5166,6 +5190,7 @@ exports = module.exports = (function () {
         }
     };
 
+    // Walks up the parent links to get the root of the graph the current promise is connected to.
     Promise.prototype._getRootPromise = function () {
         var root = this;
         while (root._parent !== undefined) {
@@ -5174,6 +5199,7 @@ exports = module.exports = (function () {
         return root;
     };
 
+    // Prints out the promise graph hierarchy for the graph the current promise is connected to.
     Promise.prototype._dumpPromiseGraph = function () {
         if (Promise.prototype.enableTracing === true) {
             console.log("promise graph for promise " + this.__id + ":");
@@ -5184,6 +5210,7 @@ exports = module.exports = (function () {
         }
     };
 
+    // Pretty-prints the current promise along with some helpful metadata like its settled value. Useful for debugging.
     Promise.prototype._dump = function (indent, isLinked) {
         if (Promise.prototype.enableTracing === true) {
             var that = this;
@@ -5200,21 +5227,31 @@ exports = module.exports = (function () {
         }
     };
 
+    // Handler for when a child (i.e. linked) promise gets cancelled.
+    // If all child promises are cancelled, the parent promise is also cancelled.
     Promise.prototype.onLinkedPromiseCancelled = function () {
         this._trace("onLinkedPromiseCancelled");
 
         this._linkedPromisesCancelledCount += 1;
 
-        if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
-            this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
-            this._trace("_linkedPromises.length: " + this._linkedPromises.length);
-            this._assert(
-                this._linkedPromisesCancelledCount === this._linkedPromises.length,
-                "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
-            );
+        if (this._isSettled !== true) {
+            // TODO - _cancelHandler call below should be refactored to be part of _cancel
+            if (Promise.prototype.useBluebirdV2Semantics === true) {
+                var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
+                this._cancel(cancelValue);
+            } else {
+                if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
+                    this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
+                    this._trace("_linkedPromises.length: " + this._linkedPromises.length);
+                    this._assert(
+                        this._linkedPromisesCancelledCount === this._linkedPromises.length,
+                        "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
+                    );
 
-            var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
-            this._cancel(cancelValue);
+                    var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
+                    this._cancel(cancelValue);
+                }
+            }
         }
     };
 
@@ -5417,14 +5454,20 @@ exports = module.exports = (function () {
         }
     };
 
+    // Using the external dispatcher, defer the given callback so it happens on a different frame.
+    // This allows remaining sync code on this frame to finish before the callback is run.
+    // Javascript is single-threaded, so using an external dispatcher to schedule a callback on the next frame is
+    // the way to achieve async work.
     function defer(callback) {
         Promise.prototype.externalDispatcher.setTimeout(callback, 10);
     }
 
+    // Constructor for PromiseResolver, which owns an underlying promise and manages resolution of its promise.
     function PromiseResolver(resolveHandler, rejectHandler, cancelHandler) {
         this.promise = new Promise(resolveHandler, rejectHandler, cancelHandler, { label: "resolver" });
     }
 
+    // Fulfills a PromiseResolver's pending promise with the given value. Fulfillment is async.
     PromiseResolver.prototype.resolve = function (value) {
         this.promise._trace("resolving resolver...");
         // TODO - can only resolve once
@@ -5434,10 +5477,12 @@ exports = module.exports = (function () {
         });
     };
 
+    // Alias for resolve().
     PromiseResolver.prototype.fulfill = function (value) {
         return this.resolve(value);
     };
 
+    // Rejects a PromiseResolver's pending promise with the given value. Rejection is async.
     PromiseResolver.prototype.reject = function (reason) {
         this.promise._trace("rejecting resolver...");
         // TODO - can only resolve once
@@ -5447,23 +5492,30 @@ exports = module.exports = (function () {
         });
     };
 
+    // Cancels a PromiseResolver's promise.
     PromiseResolver.prototype.cancel = function () {
         this.promise._trace("cancelling resolver...");
         // TODO - can only resolve once
-        if (Promise.prototype.useBluebirdSemantics === true) {
+
+        // For Bluebird 2.X semantics, cancellation is async and is bundled with rejection using Promise.CancellationError.
+        if (Promise.prototype.useBluebirdV2Semantics === true) {
             var that = this;
             defer(function () {
                 that.promise._reject(new CancellationError());
             });
         } else {
+            // For promiseLib semantics, cancellation is sync and is not bundled with rejection. It calls a separate
+            // cancelHandler.
             this.promise._cancel();
         }
     };
 
+    // Implements Promise.pending(), a PromiseResolver that has not decided its value yet.
     var createResolver = function (resolveHandler, rejectHandler, cancelHandler) {
         return new PromiseResolver(resolveHandler, rejectHandler, cancelHandler);
     };
 
+    // Implements Promise.fulfilled(), a Promise with a fulfilled value. Note that fulfillment is async.
     var createFulfilled = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".fulfilled" });
         // TODO - weird to not do this as an init arg
@@ -5473,6 +5525,7 @@ exports = module.exports = (function () {
         return newPromise;
     };
 
+    // Implements Promise.rejected(), a Promises with a rejected value. Note that rejection is async.
     var createRejected = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".rejected" });
         // TODO - weird to not do this as an init arg
@@ -5482,6 +5535,8 @@ exports = module.exports = (function () {
         return newPromise;
     };
 
+    // Implements Promise.all(). Takes promisesToBundle and links them together.
+    // Returns a new promise that resolves when all the promisesToBundle have resolved.
     var bundlePromises = function (promisesToBundle) {
         // TODO - bundle rejection together also
 
@@ -5519,6 +5574,7 @@ exports = module.exports = (function () {
         return allResolver.promise;
     };
 
+    // Bluebird 2.X way of indicating a rejection due to cancellation
     function CancellationError() {
         this.message = "cancellation error";
     }
@@ -5713,6 +5769,14 @@ describe("cancellation using Bluebird V2.X semantics", function () {
         resolver.reject("rejectValue");
         resolver.cancel();
     });
+
+    it("parent is cancelled as soon as one child promise is cancelled", function (done) {
+        var resolver = Promise.pending(unexpectedSpy, unexpectedSpy, done);
+        var child1 = resolver.promise.then();
+        var child2 = resolver.promise.then();
+        child1.cancel();
+        resolver.fulfill();
+    });
 });
 
 describe("cancellation using promiseLib semantics", function () {
@@ -5736,23 +5800,31 @@ describe("cancellation using promiseLib semantics", function () {
             resolver.reject("rejectValue");
             resolver.cancel();
         });
+
+        it("parent is NOT cancelled as soon as one child promise is cancelled", function (done) {
+            var resolver = Promise.pending(undefined, unexpectedSpy, unexpectedSpy);
+            var child1 = resolver.promise.then();
+            var child2 = resolver.promise.then();
+            child1.cancel();
+            done();
+        });
     }
 });
 
 describe("promiseLib configuration tests", function () {
     if (isUsingPromiseLib === true) {
-        it("useBluebirdSemantics defaults to false", function (done) {
+        it("useBluebirdV2Semantics defaults to false", function (done) {
             var promise = Promise.pending().promise;
-            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.false;
             done();
         });
 
-        it("setUseBluebirdV2Semantics changes useBluebirdSemantics", function (done) {
+        it("setUseBluebirdV2Semantics changes useBluebirdV2Semantics", function (done) {
             var promise = Promise.pending().promise;
             Promise.setUseBluebirdV2Semantics(true);
-            chai.expect(promise.useBluebirdSemantics).to.be.true;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.true;
             Promise.setUseBluebirdV2Semantics(false);
-            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.false;
             done();
         });
     }

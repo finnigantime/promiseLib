@@ -163,6 +163,14 @@ describe("cancellation using Bluebird V2.X semantics", function () {
         resolver.reject("rejectValue");
         resolver.cancel();
     });
+
+    it("parent is cancelled as soon as one child promise is cancelled", function (done) {
+        var resolver = Promise.pending(unexpectedSpy, unexpectedSpy, done);
+        var child1 = resolver.promise.then();
+        var child2 = resolver.promise.then();
+        child1.cancel();
+        resolver.fulfill();
+    });
 });
 
 describe("cancellation using promiseLib semantics", function () {
@@ -186,23 +194,31 @@ describe("cancellation using promiseLib semantics", function () {
             resolver.reject("rejectValue");
             resolver.cancel();
         });
+
+        it("parent is NOT cancelled as soon as one child promise is cancelled", function (done) {
+            var resolver = Promise.pending(undefined, unexpectedSpy, unexpectedSpy);
+            var child1 = resolver.promise.then();
+            var child2 = resolver.promise.then();
+            child1.cancel();
+            done();
+        });
     }
 });
 
 describe("promiseLib configuration tests", function () {
     if (isUsingPromiseLib === true) {
-        it("useBluebirdSemantics defaults to false", function (done) {
+        it("useBluebirdV2Semantics defaults to false", function (done) {
             var promise = Promise.pending().promise;
-            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.false;
             done();
         });
 
-        it("setUseBluebirdV2Semantics changes useBluebirdSemantics", function (done) {
+        it("setUseBluebirdV2Semantics changes useBluebirdV2Semantics", function (done) {
             var promise = Promise.pending().promise;
             Promise.setUseBluebirdV2Semantics(true);
-            chai.expect(promise.useBluebirdSemantics).to.be.true;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.true;
             Promise.setUseBluebirdV2Semantics(false);
-            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            chai.expect(promise.useBluebirdV2Semantics).to.be.false;
             done();
         });
     }

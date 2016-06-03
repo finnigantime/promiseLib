@@ -168,7 +168,12 @@ exports = module.exports = (function () {
         createESPNAndNBARequests().cancel();
     };
 
+    var setEnableTracing = function (newVal) {
+        Promise.setEnableTracing(newVal);
+    };
+
     return {
+        setEnableTracing: setEnableTracing,
         printALWestTable: printALWestTable,
         createESPNAndNBARequests: createESPNAndNBARequests,
         cancelESPNRequest: cancelESPNRequest,
