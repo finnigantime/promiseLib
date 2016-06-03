@@ -15,7 +15,7 @@ exports = module.exports = (function () {
         }
 
         this._linkedPromises = [];
-        ///this._linkedPromisesCancelledCount = 0;
+        this._linkedPromisesCancelledCount = 0;
         this._children = [];
         this._label = initArgs.label;
 
@@ -105,21 +105,19 @@ exports = module.exports = (function () {
     Promise.prototype.onLinkedPromiseCancelled = function () {
         this._trace("onLinkedPromiseCancelled");
 
-        var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
-        this._cancel(cancelValue);
+        this._linkedPromisesCancelledCount += 1;
 
-        // this._linkedPromisesCancelledCount += 1;
+        if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
+            this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
+            this._trace("_linkedPromises.length: " + this._linkedPromises.length);
+            this._assert(
+                this._linkedPromisesCancelledCount === this._linkedPromises.length,
+                "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
+            );
 
-        // if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
-        //     this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
-        //     this._trace("_linkedPromises.length: " + this._linkedPromises.length);
-        //     this._assert(
-        //         this._linkedPromisesCancelledCount === this._linkedPromises.length,
-        //         "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
-        //     );
-
-        //     this._cancel();
-        // }
+            var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
+            this._cancel(cancelValue);
+        }
     };
 
     // a.then(b).then(c)
