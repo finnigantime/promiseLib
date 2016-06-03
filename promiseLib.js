@@ -6,7 +6,7 @@ exports = module.exports = (function () {
     function Promise(resolveHandler, rejectHandler, cancelHandler /*, varargs initArgs */) {
 
         var initArgs = {};
-        console.log("args length: " + arguments.length);
+        this._trace("args length: " + arguments.length);
         for (var i = 3; i < arguments.length; ++i) {
             var args = arguments[i];
             Object.keys(args).forEach(function (key) {
@@ -40,6 +40,8 @@ exports = module.exports = (function () {
         this._dumpPromiseGraph();
     }
 
+    Promise.prototype.enableTracing = false;
+
     Promise.prototype.useBluebirdSemantics = false;
     function setUseBluebirdSemantics(newVal) {
         Promise.prototype.useBluebirdSemantics = newVal;
@@ -59,8 +61,10 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype._trace = function (message) {
-        var prefix = this + ": ";
-        console.log(prefix + message);
+        if (Promise.prototype.enableTracing === true) {
+            var prefix = this + ": ";
+            console.log(prefix + message);
+        }
     };
 
     Promise.prototype._getRootPromise = function () {
@@ -72,25 +76,29 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype._dumpPromiseGraph = function () {
-        console.log("promise graph for promise " + this.__id + ":");
+        if (Promise.prototype.enableTracing === true) {
+            console.log("promise graph for promise " + this.__id + ":");
 
-        var rootPromise = this._getRootPromise();
-        rootPromise._dump("");
-        console.log();
+            var rootPromise = this._getRootPromise();
+            rootPromise._dump("");
+            console.log();
+        }
     };
 
     Promise.prototype._dump = function (indent, isLinked) {
-        var that = this;
-        var line = indent + this;
-        if (isLinked === true) {
-            line = line + " (LINKED)";
+        if (Promise.prototype.enableTracing === true) {
+            var that = this;
+            var line = indent + this;
+            if (isLinked === true) {
+                line = line + " (LINKED)";
+            }
+            line = line + " - _isSettled: " + this._isSettled + ", _settledValue: " + (typeof this._settledValue);
+            console.log(line);
+            this._children.forEach(function (child) {
+                var isLinked = that._linkedPromises.indexOf(child) >= 0;
+                child._dump(indent + "  ", isLinked);
+            });
         }
-        line = line + " - _isSettled: " + this._isSettled + ", _settledValue: " + (typeof this._settledValue);
-        console.log(line);
-        this._children.forEach(function (child) {
-            var isLinked = that._linkedPromises.indexOf(child) >= 0;
-            child._dump(indent + "  ", isLinked);
-        });
     };
 
     // a.then(b).then(c)
@@ -290,19 +298,19 @@ exports = module.exports = (function () {
     }
 
     PromiseResolver.prototype.fulfill = PromiseResolver.prototype.resolve = function (value) {
-        console.log("resolving resolver...");
+        this.promise._trace("resolving resolver...");
         // TODO - can only resolve once
         this.promise._resolve(value);
     };
 
     PromiseResolver.prototype.reject = function (reason) {
-        console.log("rejecting resolver...");
+        this.promise._trace("rejecting resolver...");
         // TODO - can only resolve once
         this.promise._reject(reason);
     };
 
     PromiseResolver.prototype.cancel = function () {
-        console.log("cancelling resolver...");
+        this.promise._trace("cancelling resolver...");
         // TODO - can only resolve once
         if (Promise.prototype.useBluebirdSemantics === true) {
             this.promise._reject(new CancellationError());
