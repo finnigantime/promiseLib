@@ -5096,7 +5096,7 @@ exports = module.exports = (function () {
     function Promise(resolveHandler, rejectHandler, cancelHandler /*, varargs initArgs */) {
 
         var initArgs = {};
-        console.log("args length: " + arguments.length);
+        ///this._trace("args length: " + arguments.length);
         for (var i = 3; i < arguments.length; ++i) {
             var args = arguments[i];
             Object.keys(args).forEach(function (key) {
@@ -5105,6 +5105,7 @@ exports = module.exports = (function () {
         }
 
         this._linkedPromises = [];
+        this._linkedPromisesCancelledCount = 0;
         this._children = [];
         this._label = initArgs.label;
 
@@ -5130,9 +5131,19 @@ exports = module.exports = (function () {
         this._dumpPromiseGraph();
     }
 
+    Promise.prototype.enableTracing = true;
+    function setEnableTracing(newVal) {
+        Promise.prototype.enableTracing = newVal;
+    }
+
     Promise.prototype.useBluebirdSemantics = false;
-    function setUseBluebirdSemantics(newVal) {
+    function setUseBluebirdV2Semantics(newVal) {
         Promise.prototype.useBluebirdSemantics = newVal;
+    }
+
+    Promise.prototype.externalDispatcher = undefined;
+    function setExternalDispatcher(newVal) {
+        Promise.prototype.externalDispatcher = newVal;
     }
 
     Promise.prototype._assert = function (condition, message) {
@@ -5149,8 +5160,10 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype._trace = function (message) {
-        var prefix = this + ": ";
-        console.log(prefix + message);
+        if (Promise.prototype.enableTracing === true) {
+            var prefix = this + ": ";
+            console.log(prefix + message);
+        }
     };
 
     Promise.prototype._getRootPromise = function () {
@@ -5162,25 +5175,47 @@ exports = module.exports = (function () {
     };
 
     Promise.prototype._dumpPromiseGraph = function () {
-        console.log("promise graph for promise " + this.__id + ":");
+        if (Promise.prototype.enableTracing === true) {
+            console.log("promise graph for promise " + this.__id + ":");
 
-        var rootPromise = this._getRootPromise();
-        rootPromise._dump("");
-        console.log();
+            var rootPromise = this._getRootPromise();
+            rootPromise._dump("");
+            console.log();
+        }
     };
 
     Promise.prototype._dump = function (indent, isLinked) {
-        var that = this;
-        var line = indent + this;
-        if (isLinked === true) {
-            line = line + " (LINKED)";
+        if (Promise.prototype.enableTracing === true) {
+            var that = this;
+            var line = indent + this;
+            if (isLinked === true) {
+                line = line + " (LINKED)";
+            }
+            line = line + " - _isSettled: " + this._isSettled + ", _settledValue: " + (typeof this._settledValue);
+            console.log(line);
+            this._children.forEach(function (child) {
+                var isLinked = that._linkedPromises.indexOf(child) >= 0;
+                child._dump(indent + "  ", isLinked);
+            });
         }
-        line = line + " - _isSettled: " + this._isSettled + ", _settledValue: " + (typeof this._settledValue);
-        console.log(line);
-        this._children.forEach(function (child) {
-            var isLinked = that._linkedPromises.indexOf(child) >= 0;
-            child._dump(indent + "  ", isLinked);
-        });
+    };
+
+    Promise.prototype.onLinkedPromiseCancelled = function () {
+        this._trace("onLinkedPromiseCancelled");
+
+        this._linkedPromisesCancelledCount += 1;
+
+        if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
+            this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
+            this._trace("_linkedPromises.length: " + this._linkedPromises.length);
+            this._assert(
+                this._linkedPromisesCancelledCount === this._linkedPromises.length,
+                "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
+            );
+
+            var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
+            this._cancel(cancelValue);
+        }
     };
 
     // a.then(b).then(c)
@@ -5261,6 +5296,7 @@ exports = module.exports = (function () {
         });
     };
 
+    // TODO - does it make sense to allow cancel with a value?
     Promise.prototype._cancel = function (value) {
         var that = this;
 
@@ -5274,6 +5310,10 @@ exports = module.exports = (function () {
         this._isSettled = true;
         this._isCancelled = true;
 
+        if (this._parent !== undefined) {
+            this._parent.onLinkedPromiseCancelled();
+        }
+
         // TODO - make sure _cancelHandler is not defined
 
         this._trace("will cancel linked promises. length=" + this._linkedPromises.length);
@@ -5282,6 +5322,8 @@ exports = module.exports = (function () {
             promise._cancelLinkedPromise(value);
         });
     };
+
+    Promise.prototype.cancel = Promise.prototype._cancel;
 
     // a.then(function b(a.v) {
     //     return c(a.v);
@@ -5375,47 +5417,68 @@ exports = module.exports = (function () {
         }
     };
 
-    function PromiseResolver() {
-        this.promise = new Promise(undefined, undefined, undefined, { label: "resolver" });
+    function defer(callback) {
+        Promise.prototype.externalDispatcher.setTimeout(callback, 10);
     }
 
-    PromiseResolver.prototype.fulfill = PromiseResolver.prototype.resolve = function (value) {
-        console.log("resolving resolver...");
+    function PromiseResolver(resolveHandler, rejectHandler, cancelHandler) {
+        this.promise = new Promise(resolveHandler, rejectHandler, cancelHandler, { label: "resolver" });
+    }
+
+    PromiseResolver.prototype.resolve = function (value) {
+        this.promise._trace("resolving resolver...");
         // TODO - can only resolve once
-        this.promise._resolve(value);
+        var that = this;
+        defer(function () {
+            that.promise._resolve(value);
+        });
+    };
+
+    PromiseResolver.prototype.fulfill = function (value) {
+        return this.resolve(value);
     };
 
     PromiseResolver.prototype.reject = function (reason) {
-        console.log("rejecting resolver...");
+        this.promise._trace("rejecting resolver...");
         // TODO - can only resolve once
-        this.promise._reject(reason);
+        var that = this;
+        defer(function () {
+            that.promise._reject(reason);
+        });
     };
 
     PromiseResolver.prototype.cancel = function () {
-        console.log("cancelling resolver...");
+        this.promise._trace("cancelling resolver...");
         // TODO - can only resolve once
         if (Promise.prototype.useBluebirdSemantics === true) {
-            this.promise._reject(new CancellationError());
+            var that = this;
+            defer(function () {
+                that.promise._reject(new CancellationError());
+            });
         } else {
             this.promise._cancel();
         }
     };
 
-    var createResolver = function () {
-        return new PromiseResolver();
+    var createResolver = function (resolveHandler, rejectHandler, cancelHandler) {
+        return new PromiseResolver(resolveHandler, rejectHandler, cancelHandler);
     };
 
     var createFulfilled = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".fulfilled" });
         // TODO - weird to not do this as an init arg
-        newPromise._resolve(value);
+        defer(function () {
+            newPromise._resolve(value);
+        });
         return newPromise;
     };
 
     var createRejected = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".rejected" });
         // TODO - weird to not do this as an init arg
-        newPromise._reject(value);
+        defer(function () {
+            newPromise._reject(value);
+        });
         return newPromise;
     };
 
@@ -5425,7 +5488,14 @@ exports = module.exports = (function () {
         var resolvedValues = [];
         var resolvedValuesCount = 0;
 
-        var allResolver = new PromiseResolver();
+        var allResolver = new PromiseResolver(undefined, undefined, function () {
+            // TODO - cancelHandler should get called for _cancel direct calls, not just cancelling linked promise
+            allResolver.promise._trace("cancelHandler. cancelling promisesToBundle... (length=" + promisesToBundle.length + ")");
+            for (var i = 0; i < promisesToBundle.length; ++i) {
+                var promise = promisesToBundle[i];
+                promise.cancel();
+            }
+        });
         allResolver.promise._label = "ALL";
 
         // TODO - what if promisesToBundle gets modified while processing it?
@@ -5454,7 +5524,9 @@ exports = module.exports = (function () {
     }
 
     return {
-        setUseBluebirdSemantics: setUseBluebirdSemantics,
+        setEnableTracing: setEnableTracing,
+        setUseBluebirdV2Semantics: setUseBluebirdV2Semantics,
+        setExternalDispatcher: setExternalDispatcher,
         CancellationError: CancellationError,
         pending: createResolver,
         fulfilled: createFulfilled,
@@ -5482,6 +5554,7 @@ var isUsingPromiseLib = false;
 
 var Promise = require("./promiseLib");
 var isUsingPromiseLib = true;
+Promise.setExternalDispatcher(window);
 
 mocha.setup("bdd");
 
@@ -5568,12 +5641,35 @@ describe("Promise.all", function () {
             done();
         });
     });
+
+    // it("cancelling root cancels all chained promises", function (done) {
+    //     var cancel1Called, cancel2Called;
+    //     function testDone() {
+    //         if (cancel1Called === true && cancel2Called === true) {
+    //             done();
+    //         }
+    //     }
+    //     function cancelHandler1() {
+    //         cancel1Called = true;
+    //         testDone();
+    //     }
+    //     function cancelHandler2() {
+    //         cancel2Called = true;
+    //         testDone();
+    //     }
+    //     var promise = Promise.all([
+    //         Promise.pending(undefined, undefined, cancelHandler1).promise,
+    //         Promise.pending(undefined, undefined, cancelHandler2).promise
+    //     ]);
+
+    //     promise.cancel();
+    // });
 });
 
-describe("cancellation using Bluebird 2.x semantics", function () {
+describe("cancellation using Bluebird V2.X semantics", function () {
     before(function () {
         if (isUsingPromiseLib === true) {
-            Promise.setUseBluebirdSemantics(true);
+            Promise.setUseBluebirdV2Semantics(true);
         } else {
             Promise.AlwaysCancellable = true;
         }
@@ -5581,7 +5677,7 @@ describe("cancellation using Bluebird 2.x semantics", function () {
 
     after(function () {
         if (isUsingPromiseLib === true) {
-            Promise.setUseBluebirdSemantics(false);
+            Promise.setUseBluebirdV2Semantics(false);
         }
     });
 
@@ -5601,14 +5697,14 @@ describe("cancellation using Bluebird 2.x semantics", function () {
         resolver.cancel("cancelValue");
     });
 
-    it("cancel a fulfilled promise no-ops", function (done) {
+    it("cancel a fulfilled promise before deferred resolution no-ops", function (done) {
         var resolver = Promise.pending();
         resolver.promise.then(done, unexpectedSpy, unexpectedSpy);
         resolver.fulfill();
         resolver.cancel();
     });
 
-    it("cancel a rejected promise no-ops", function (done) {
+    it("cancel a rejected promise before deferred resolution no-ops", function (done) {
         var resolver = Promise.pending();
         resolver.promise.then(unexpectedSpy, function (reason) {
             chai.expect(reason).to.equal("rejectValue");
@@ -5626,6 +5722,20 @@ describe("cancellation using promiseLib semantics", function () {
             resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
             resolver.cancel();
         });
+
+        it("cancel a fulfilled promise before deferred resolution still cancels it", function (done) {
+            var resolver = Promise.pending();
+            resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+            resolver.fulfill();
+            resolver.cancel();
+        });
+
+        it("cancel a rejected promise before deferred resolution still cancels it", function (done) {
+            var resolver = Promise.pending();
+            resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+            resolver.reject("rejectValue");
+            resolver.cancel();
+        });
     }
 });
 
@@ -5637,11 +5747,11 @@ describe("promiseLib configuration tests", function () {
             done();
         });
 
-        it("setUseBluebirdSemantics changes useBluebirdSemantics", function (done) {
+        it("setUseBluebirdV2Semantics changes useBluebirdSemantics", function (done) {
             var promise = Promise.pending().promise;
-            Promise.setUseBluebirdSemantics(true);
+            Promise.setUseBluebirdV2Semantics(true);
             chai.expect(promise.useBluebirdSemantics).to.be.true;
-            Promise.setUseBluebirdSemantics(false);
+            Promise.setUseBluebirdV2Semantics(false);
             chai.expect(promise.useBluebirdSemantics).to.be.false;
             done();
         });

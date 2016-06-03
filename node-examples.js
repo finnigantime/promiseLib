@@ -5,6 +5,11 @@ exports = module.exports = (function () {
     //var Promise = require("bluebird");
 
     var Promise = require("./promiseLib");
+
+    require("jsdom").env("", function (err, window) {
+        Promise.setExternalDispatcher(window);
+    });
+
     var fooResolver;
 
     var loadJquery = function () {

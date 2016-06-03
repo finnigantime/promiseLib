@@ -4,6 +4,7 @@ var isUsingPromiseLib = false;
 
 var Promise = require("./promiseLib");
 var isUsingPromiseLib = true;
+Promise.setExternalDispatcher(window);
 
 mocha.setup("bdd");
 
@@ -90,12 +91,35 @@ describe("Promise.all", function () {
             done();
         });
     });
+
+    // it("cancelling root cancels all chained promises", function (done) {
+    //     var cancel1Called, cancel2Called;
+    //     function testDone() {
+    //         if (cancel1Called === true && cancel2Called === true) {
+    //             done();
+    //         }
+    //     }
+    //     function cancelHandler1() {
+    //         cancel1Called = true;
+    //         testDone();
+    //     }
+    //     function cancelHandler2() {
+    //         cancel2Called = true;
+    //         testDone();
+    //     }
+    //     var promise = Promise.all([
+    //         Promise.pending(undefined, undefined, cancelHandler1).promise,
+    //         Promise.pending(undefined, undefined, cancelHandler2).promise
+    //     ]);
+
+    //     promise.cancel();
+    // });
 });
 
-describe("cancellation using Bluebird 2.x semantics", function () {
+describe("cancellation using Bluebird V2.X semantics", function () {
     before(function () {
         if (isUsingPromiseLib === true) {
-            Promise.setUseBluebirdSemantics(true);
+            Promise.setUseBluebirdV2Semantics(true);
         } else {
             Promise.AlwaysCancellable = true;
         }
@@ -103,7 +127,7 @@ describe("cancellation using Bluebird 2.x semantics", function () {
 
     after(function () {
         if (isUsingPromiseLib === true) {
-            Promise.setUseBluebirdSemantics(false);
+            Promise.setUseBluebirdV2Semantics(false);
         }
     });
 
@@ -123,14 +147,14 @@ describe("cancellation using Bluebird 2.x semantics", function () {
         resolver.cancel("cancelValue");
     });
 
-    it("cancel a fulfilled promise no-ops", function (done) {
+    it("cancel a fulfilled promise before deferred resolution no-ops", function (done) {
         var resolver = Promise.pending();
         resolver.promise.then(done, unexpectedSpy, unexpectedSpy);
         resolver.fulfill();
         resolver.cancel();
     });
 
-    it("cancel a rejected promise no-ops", function (done) {
+    it("cancel a rejected promise before deferred resolution no-ops", function (done) {
         var resolver = Promise.pending();
         resolver.promise.then(unexpectedSpy, function (reason) {
             chai.expect(reason).to.equal("rejectValue");
@@ -148,6 +172,20 @@ describe("cancellation using promiseLib semantics", function () {
             resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
             resolver.cancel();
         });
+
+        it("cancel a fulfilled promise before deferred resolution still cancels it", function (done) {
+            var resolver = Promise.pending();
+            resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+            resolver.fulfill();
+            resolver.cancel();
+        });
+
+        it("cancel a rejected promise before deferred resolution still cancels it", function (done) {
+            var resolver = Promise.pending();
+            resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+            resolver.reject("rejectValue");
+            resolver.cancel();
+        });
     }
 });
 
@@ -159,11 +197,11 @@ describe("promiseLib configuration tests", function () {
             done();
         });
 
-        it("setUseBluebirdSemantics changes useBluebirdSemantics", function (done) {
+        it("setUseBluebirdV2Semantics changes useBluebirdSemantics", function (done) {
             var promise = Promise.pending().promise;
-            Promise.setUseBluebirdSemantics(true);
+            Promise.setUseBluebirdV2Semantics(true);
             chai.expect(promise.useBluebirdSemantics).to.be.true;
-            Promise.setUseBluebirdSemantics(false);
+            Promise.setUseBluebirdV2Semantics(false);
             chai.expect(promise.useBluebirdSemantics).to.be.false;
             done();
         });

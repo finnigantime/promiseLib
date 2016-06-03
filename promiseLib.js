@@ -6,7 +6,7 @@ exports = module.exports = (function () {
     function Promise(resolveHandler, rejectHandler, cancelHandler /*, varargs initArgs */) {
 
         var initArgs = {};
-        this._trace("args length: " + arguments.length);
+        ///this._trace("args length: " + arguments.length);
         for (var i = 3; i < arguments.length; ++i) {
             var args = arguments[i];
             Object.keys(args).forEach(function (key) {
@@ -41,11 +41,19 @@ exports = module.exports = (function () {
         this._dumpPromiseGraph();
     }
 
-    Promise.prototype.enableTracing = false;
+    Promise.prototype.enableTracing = true;
+    function setEnableTracing(newVal) {
+        Promise.prototype.enableTracing = newVal;
+    }
 
     Promise.prototype.useBluebirdSemantics = false;
-    function setUseBluebirdSemantics(newVal) {
+    function setUseBluebirdV2Semantics(newVal) {
         Promise.prototype.useBluebirdSemantics = newVal;
+    }
+
+    Promise.prototype.externalDispatcher = undefined;
+    function setExternalDispatcher(newVal) {
+        Promise.prototype.externalDispatcher = newVal;
     }
 
     Promise.prototype._assert = function (condition, message) {
@@ -319,27 +327,44 @@ exports = module.exports = (function () {
         }
     };
 
+    function defer(callback) {
+        Promise.prototype.externalDispatcher.setTimeout(callback, 10);
+    }
+
     function PromiseResolver(resolveHandler, rejectHandler, cancelHandler) {
         this.promise = new Promise(resolveHandler, rejectHandler, cancelHandler, { label: "resolver" });
     }
 
-    PromiseResolver.prototype.fulfill = PromiseResolver.prototype.resolve = function (value) {
+    PromiseResolver.prototype.resolve = function (value) {
         this.promise._trace("resolving resolver...");
         // TODO - can only resolve once
-        this.promise._resolve(value);
+        var that = this;
+        defer(function () {
+            that.promise._resolve(value);
+        });
+    };
+
+    PromiseResolver.prototype.fulfill = function (value) {
+        return this.resolve(value);
     };
 
     PromiseResolver.prototype.reject = function (reason) {
         this.promise._trace("rejecting resolver...");
         // TODO - can only resolve once
-        this.promise._reject(reason);
+        var that = this;
+        defer(function () {
+            that.promise._reject(reason);
+        });
     };
 
     PromiseResolver.prototype.cancel = function () {
         this.promise._trace("cancelling resolver...");
         // TODO - can only resolve once
         if (Promise.prototype.useBluebirdSemantics === true) {
-            this.promise._reject(new CancellationError());
+            var that = this;
+            defer(function () {
+                that.promise._reject(new CancellationError());
+            });
         } else {
             this.promise._cancel();
         }
@@ -352,14 +377,18 @@ exports = module.exports = (function () {
     var createFulfilled = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".fulfilled" });
         // TODO - weird to not do this as an init arg
-        newPromise._resolve(value);
+        defer(function () {
+            newPromise._resolve(value);
+        });
         return newPromise;
     };
 
     var createRejected = function (value) {
         var newPromise = new Promise(undefined, undefined, undefined, { label: ".rejected" });
         // TODO - weird to not do this as an init arg
-        newPromise._reject(value);
+        defer(function () {
+            newPromise._reject(value);
+        });
         return newPromise;
     };
 
@@ -369,7 +398,14 @@ exports = module.exports = (function () {
         var resolvedValues = [];
         var resolvedValuesCount = 0;
 
-        var allResolver = new PromiseResolver();
+        var allResolver = new PromiseResolver(undefined, undefined, function () {
+            // TODO - cancelHandler should get called for _cancel direct calls, not just cancelling linked promise
+            allResolver.promise._trace("cancelHandler. cancelling promisesToBundle... (length=" + promisesToBundle.length + ")");
+            for (var i = 0; i < promisesToBundle.length; ++i) {
+                var promise = promisesToBundle[i];
+                promise.cancel();
+            }
+        });
         allResolver.promise._label = "ALL";
 
         // TODO - what if promisesToBundle gets modified while processing it?
@@ -398,7 +434,9 @@ exports = module.exports = (function () {
     }
 
     return {
-        setUseBluebirdSemantics: setUseBluebirdSemantics,
+        setEnableTracing: setEnableTracing,
+        setUseBluebirdV2Semantics: setUseBluebirdV2Semantics,
+        setExternalDispatcher: setExternalDispatcher,
         CancellationError: CancellationError,
         pending: createResolver,
         fulfilled: createFulfilled,
