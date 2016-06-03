@@ -1,3 +1,6 @@
 [submodule "bluebird"]
 	path = bluebird
 	url = https://github.com/petkaantonov/bluebird.git
+[submodule "HBOCodeLabs-bluebird"]
+	path = HBOCodeLabs-bluebird
+	url = https://github.com/HBOCodeLabs/bluebird.git
