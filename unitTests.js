@@ -1,10 +1,14 @@
+var isUsingPromiseLib = false;
 //var Promise = require("bluebird");
+//var Promise = require("./HBOCodeLabs-bluebird")
+
 var Promise = require("./promiseLib");
+var isUsingPromiseLib = true;
 
 mocha.setup("bdd");
 
 var unexpectedSpy = function () {
-    chai.fail("unexpected function call");
+    throw new Error("unexpected function call");
 };
 
 describe("basic functionality", function () {
@@ -24,12 +28,6 @@ describe("basic functionality", function () {
         var resolver = Promise.pending();
         resolver.promise.then(unexpectedSpy, done, unexpectedSpy);
         resolver.reject();
-    });
-
-    it("cancelled promise calls cancel handler", function (done) {
-        var resolver = Promise.pending();
-        resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
-        resolver.cancel();
     });
 
     it("chained promise gets called on fulfilled promise", function (done) {
@@ -92,5 +90,83 @@ describe("Promise.all", function () {
             done();
         });
     });
+});
+
+describe("cancellation using Bluebird 2.x semantics", function () {
+    before(function () {
+        if (isUsingPromiseLib === true) {
+            Promise.setUseBluebirdSemantics(true);
+        } else {
+            Promise.AlwaysCancellable = true;
+        }
+    });
+
+    after(function () {
+        if (isUsingPromiseLib === true) {
+            Promise.setUseBluebirdSemantics(false);
+        }
+    });
+
+    it("exposes Promise.CancellationError", function (done) {
+        chai.expect(Promise.CancellationError).to.be.a("Function");
+        done();
+    });
+
+    it("cancel causes rejection with Promise.CancellationError", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(unexpectedSpy, function (reason) {
+            chai.expect(reason === Promise.CancellationError).to.be.false;
+            chai.expect(reason instanceof Promise.CancellationError).to.be.true;
+            chai.expect(reason.message).to.equal("cancellation error");
+            done();
+        }, unexpectedSpy);
+        resolver.cancel("cancelValue");
+    });
+
+    it("cancel a fulfilled promise no-ops", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(done, unexpectedSpy, unexpectedSpy);
+        resolver.fulfill();
+        resolver.cancel();
+    });
+
+    it("cancel a rejected promise no-ops", function (done) {
+        var resolver = Promise.pending();
+        resolver.promise.then(unexpectedSpy, function (reason) {
+            chai.expect(reason).to.equal("rejectValue");
+            done();
+        }, unexpectedSpy);
+        resolver.reject("rejectValue");
+        resolver.cancel();
+    });
+});
+
+describe("cancellation using promiseLib semantics", function () {
+    if (isUsingPromiseLib === true) {
+        it("cancelled promise calls cancel handler", function (done) {
+            var resolver = Promise.pending();
+            resolver.promise.then(unexpectedSpy, unexpectedSpy, done);
+            resolver.cancel();
+        });
+    }
+});
+
+describe("promiseLib configuration tests", function () {
+    if (isUsingPromiseLib === true) {
+        it("useBluebirdSemantics defaults to false", function (done) {
+            var promise = Promise.pending().promise;
+            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            done();
+        });
+
+        it("setUseBluebirdSemantics changes useBluebirdSemantics", function (done) {
+            var promise = Promise.pending().promise;
+            Promise.setUseBluebirdSemantics(true);
+            chai.expect(promise.useBluebirdSemantics).to.be.true;
+            Promise.setUseBluebirdSemantics(false);
+            chai.expect(promise.useBluebirdSemantics).to.be.false;
+            done();
+        });
+    }
 });
 

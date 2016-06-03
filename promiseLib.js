@@ -40,6 +40,11 @@ exports = module.exports = (function () {
         this._dumpPromiseGraph();
     }
 
+    Promise.prototype.useBluebirdSemantics = false;
+    function setUseBluebirdSemantics(newVal) {
+        Promise.prototype.useBluebirdSemantics = newVal;
+    }
+
     Promise.prototype._assert = function (condition, message) {
         if (condition !== true) {
             this._dumpPromiseGraph();
@@ -114,7 +119,6 @@ exports = module.exports = (function () {
             } else {
                 this._assert(this._isCancelled === true, "expected _isCancelled to be true");
                 this._trace("already cancelled, so will cancel linked promise");
-                linkedPromise._cancelLinkedPromise();
             }
         }
 
@@ -124,9 +128,12 @@ exports = module.exports = (function () {
     Promise.prototype._resolve = function (value) {
         var that = this;
 
-        this._assert(this._isSettled === false, "should not _resolve promise that is already settled");
-
         this._trace("resolving with value of type: " + (typeof value));
+
+        if (this._isSettled === true) {
+            this._trace("already settled, returning...");
+            return;
+        }
 
         this._settledValue = value;
         this._isSettled = true;
@@ -144,9 +151,12 @@ exports = module.exports = (function () {
     Promise.prototype._reject = function (value) {
         var that = this;
 
-        this._assert(this._isSettled === false, "should not _reject promise that is already settled");
-
         this._trace("rejecting with value: " + value);
+
+        if (this._isSettled === true) {
+            this._trace("already settled, returning...");
+            return;
+        }
 
         this._settledValue = value;
         this._isSettled = true;
@@ -164,9 +174,12 @@ exports = module.exports = (function () {
     Promise.prototype._cancel = function (value) {
         var that = this;
 
-        this._assert(this._isSettled === false, "should not _cancel promise that is already settled");
-
         this._trace("cancelling");
+
+        if (this._isSettled === true) {
+            this._trace("already settled, returning...");
+            return;
+        }
 
         this._isSettled = true;
         this._isCancelled = true;
@@ -276,7 +289,7 @@ exports = module.exports = (function () {
         this.promise = new Promise(undefined, undefined, undefined, { label: "resolver" });
     }
 
-    PromiseResolver.prototype.resolve = function (value) {
+    PromiseResolver.prototype.fulfill = PromiseResolver.prototype.resolve = function (value) {
         console.log("resolving resolver...");
         // TODO - can only resolve once
         this.promise._resolve(value);
@@ -291,7 +304,11 @@ exports = module.exports = (function () {
     PromiseResolver.prototype.cancel = function () {
         console.log("cancelling resolver...");
         // TODO - can only resolve once
-        this.promise._cancel();
+        if (Promise.prototype.useBluebirdSemantics === true) {
+            this.promise._reject(new CancellationError());
+        } else {
+            this.promise._cancel();
+        }
     };
 
     var createResolver = function () {
@@ -342,7 +359,13 @@ exports = module.exports = (function () {
         return allResolver.promise;
     };
 
+    function CancellationError() {
+        this.message = "cancellation error";
+    }
+
     return {
+        setUseBluebirdSemantics: setUseBluebirdSemantics,
+        CancellationError: CancellationError,
         pending: createResolver,
         fulfilled: createFulfilled,
         rejected: createRejected,
