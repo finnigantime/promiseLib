@@ -105,7 +105,8 @@ exports = module.exports = (function () {
     Promise.prototype.onLinkedPromiseCancelled = function () {
         this._trace("onLinkedPromiseCancelled");
 
-        this._cancel();
+        var cancelValue = this._cancelHandler ? this._cancelHandler() : undefined;
+        this._cancel(cancelValue);
 
         // this._linkedPromisesCancelledCount += 1;
 
@@ -320,8 +321,8 @@ exports = module.exports = (function () {
         }
     };
 
-    function PromiseResolver() {
-        this.promise = new Promise(undefined, undefined, undefined, { label: "resolver" });
+    function PromiseResolver(resolveHandler, rejectHandler, cancelHandler) {
+        this.promise = new Promise(resolveHandler, rejectHandler, cancelHandler, { label: "resolver" });
     }
 
     PromiseResolver.prototype.fulfill = PromiseResolver.prototype.resolve = function (value) {
@@ -346,8 +347,8 @@ exports = module.exports = (function () {
         }
     };
 
-    var createResolver = function () {
-        return new PromiseResolver();
+    var createResolver = function (resolveHandler, rejectHandler, cancelHandler) {
+        return new PromiseResolver(resolveHandler, rejectHandler, cancelHandler);
     };
 
     var createFulfilled = function (value) {

@@ -27,7 +27,10 @@ exports = module.exports = (function () {
 
     var fetchHTML = function (uri) {
         console.log("fetchHTML with uri: " + uri);
-        var resolver = Promise.pending();
+        var resolver = Promise.pending(undefined, undefined, function () {
+            console.log("aborting request for uri: " + uri);
+            httpRequest.abort();
+        });
 
         var httpRequest = request({
             uri: uri
@@ -43,11 +46,6 @@ exports = module.exports = (function () {
                     response: response
                 });
             }
-        });
-
-        resolver.promise.then(undefined, undefined, function () {
-            console.log("aborting request for uri: " + uri);
-            httpRequest.abort();
         });
 
         return resolver.promise;
