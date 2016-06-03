@@ -37,8 +37,8 @@ exports = module.exports = (function () {
         }, function (error, response, body) {
             console.log("error: " + error);
             console.log("response: " + response);
-            console.log("response.statusCode: " + response.statusCode);
-            if (response.statusCode === 200) {
+            if (response !== undefined && response.statusCode === 200) {
+                console.log("response.statusCode: " + response.statusCode);
                 resolver.resolve(body);
             } else {
                 resolver.reject({
@@ -148,6 +148,16 @@ exports = module.exports = (function () {
         return promise;
     };
 
+    var create404Request = function () {
+        var promise = fetchHTML("http://page.that.does.not.exist.com").then(function () {
+            console.log("bad request fulfilled");
+        }, function () {
+            console.log("bad request rejected");
+        }, function () {
+            console.log("bad request was cancelled");
+        });
+    };
+
     var cancelESPNRequest = function () {
         // TODO - make this into a promise
         createESPNAndNBARequests().cancel();
@@ -156,6 +166,7 @@ exports = module.exports = (function () {
     return {
         printALWestTable: printALWestTable,
         createESPNAndNBARequests: createESPNAndNBARequests,
-        cancelESPNRequest: cancelESPNRequest
+        cancelESPNRequest: cancelESPNRequest,
+        create404Request: create404Request
     };
 })();
