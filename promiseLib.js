@@ -15,6 +15,7 @@ exports = module.exports = (function () {
         }
 
         this._linkedPromises = [];
+        ///this._linkedPromisesCancelledCount = 0;
         this._children = [];
         this._label = initArgs.label;
 
@@ -101,6 +102,25 @@ exports = module.exports = (function () {
         }
     };
 
+    Promise.prototype.onLinkedPromiseCancelled = function () {
+        this._trace("onLinkedPromiseCancelled");
+
+        this._cancel();
+
+        // this._linkedPromisesCancelledCount += 1;
+
+        // if (this._linkedPromisesCancelledCount >= this._linkedPromises.length) {
+        //     this._trace("_linkedPromisesCancelledCount: " + this._linkedPromisesCancelledCount);
+        //     this._trace("_linkedPromises.length: " + this._linkedPromises.length);
+        //     this._assert(
+        //         this._linkedPromisesCancelledCount === this._linkedPromises.length,
+        //         "_linkedPromisesCancelledCount should not exceed _linkedPromises.length"
+        //     );
+
+        //     this._cancel();
+        // }
+    };
+
     // a.then(b).then(c)
     // creates promises:
     //   - p.a (existing promise)
@@ -179,6 +199,7 @@ exports = module.exports = (function () {
         });
     };
 
+    // TODO - does it make sense to allow cancel with a value?
     Promise.prototype._cancel = function (value) {
         var that = this;
 
@@ -192,6 +213,10 @@ exports = module.exports = (function () {
         this._isSettled = true;
         this._isCancelled = true;
 
+        if (this._parent !== undefined) {
+            this._parent.onLinkedPromiseCancelled();
+        }
+
         // TODO - make sure _cancelHandler is not defined
 
         this._trace("will cancel linked promises. length=" + this._linkedPromises.length);
@@ -200,6 +225,8 @@ exports = module.exports = (function () {
             promise._cancelLinkedPromise(value);
         });
     };
+
+    Promise.prototype.cancel = Promise.prototype._cancel;
 
     // a.then(function b(a.v) {
     //     return c(a.v);
