@@ -6,18 +6,18 @@ DSL (CSEP 590) Spring 2016
 Project 5
 
 
-=== SUMMARY ===
+### SUMMARY
 Javascript Promise library (toy library)
 
-=== FILES ===
+### FILES
 - promiseLib.js: the actual library
-- demo.mov: screencast demo
+- demo.mov: screencast demo (deleted from local repo since it was so big. uploaded to YouTube here: https://youtu.be/lsahLTtsa6Q )
 - node-examples.js: test examples that can be run in node
 - promiseLib-testPage.html: webpage for running unit tests in the browser and showing results
 - unitTests.js: unit tests
 
 
-=== INSTALL ===
+### INSTALL
 "npm install" should install all module dependencies.
 
 To install Bluebird v2.X for comparison (e.g. to run my unit tests against Bluebird):
@@ -26,7 +26,7 @@ To install Bluebird v2.X for comparison (e.g. to run my unit tests against Blueb
 3. "grunt build" here
 
 
-=== RUNNING ===
+### RUNNING
 To run the node-example scripts:
 1. Launch node (`node`)
 2. Pull in the node-examples module (`var examples = require("./node-examples")`)
@@ -48,7 +48,7 @@ To run the unit tests against Bluebird instead of against my promiseLib implemen
 4. Launch the test harness (promiseLib-testPage.html) in a browser.
 
 
-=== DESIGN RATIONALE ===
+### DESIGN RATIONALE
 For this project, I've implemented a toy promise library modled off the A+ promise spec and the Bluebird promise library which implements the A+ spec (https://github.com/petkaantonov/bluebird). This project was motivated by the shortcomings of handling promise cancellation in the A+ spec (which cancellation isn't a part of) and by shortcomings in Bluebird V2.X. My team at HBO Code Labs currently uses a fork of Bluebird V2.X with some modifications (https://github.com/HBOCodeLabs/bluebird). Bluebird V3.X has addressed many of these (http://bluebirdjs.com/docs/api/cancellation.html), but I didn't realize this until after implementing most of my promiseLib functionality and then trying my unit tests against the most recent version of Bluebird for comparison purposes. Looks like Bluebird 3.X landed very similarly to my changes.
 
 Departures from Bluebird 2.X I made in my library were:
